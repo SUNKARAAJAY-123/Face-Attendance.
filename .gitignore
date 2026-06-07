@@ -128,8 +128,19 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Project specific
+# Project specific - data & output (never commit these)
 Ajay py/
+data/
 Attendance/
 *.pkl
 *.csv
+
+# Editor & IDE
+.vscode/
+*.swp
+*.swo
+*.swn
+
+# OS
+Thumbs.db
+.DS_Store
