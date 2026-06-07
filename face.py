@@ -1,62 +1,106 @@
+"""
+face.py - Face Data Collection Script
+Captures face samples from webcam and stores them for training the KNN model.
+"""
+
 import cv2
 import pickle
 import numpy as np
 import os
 
+# ── Constants ──────────────────────────────────────────────────────────────────
+DATA_DIR = "data"
+MAX_SAMPLES = 100
+SAMPLE_INTERVAL = 10          # capture every 10th frame
+IMG_SIZE = (50, 50)
+
+# ── Setup ──────────────────────────────────────────────────────────────────────
 video = cv2.VideoCapture(0)
-facedetect = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+facedetect = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
+
+name = input("Enter Your Name: ").strip()
+if not name:
+    print("Name cannot be empty.")
+    video.release()
+    exit()
 
 faces_data = []
-i = 0
-name = input("Enter Your Name: ")
+frame_count = 0
 
+print(f"[INFO] Capturing {MAX_SAMPLES} samples for '{name}'. Press 'q' to stop early.")
+
+# ── Capture Loop ───────────────────────────────────────────────────────────────
 while True:
     ret, frame = video.read()
+    if not ret:
+        print("[ERROR] Failed to read from webcam.")
+        break
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = facedetect.detectMultiScale(gray, 1.3, 5)
-    
+    faces = facedetect.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+
     for (x, y, w, h) in faces:
-        crop_img = frame[y:y+h, x:x+w, :]
-        resized_img = cv2.resize(crop_img, (50, 50))
-        resized_img = resized_img.flatten()
-        if len(faces_data) <= 100 and i % 10 == 0:
-            faces_data.append(resized_img)
-        
-        i += 1
-        cv2.putText(frame, str(len(faces_data)), (50, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (50, 50, 255), 1)
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (50, 50, 255), 1)
-    
-    cv2.imshow("Frame", frame)
-    k = cv2.waitKey(1)
-    if k == ord('q') or len(faces_data) == 50:
+        crop = frame[y:y + h, x:x + w]
+        resized = cv2.resize(crop, IMG_SIZE).flatten()
+
+        if len(faces_data) < MAX_SAMPLES and frame_count % SAMPLE_INTERVAL == 0:
+            faces_data.append(resized)
+
+        # Visual feedback
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (50, 50, 255), 2)
+        cv2.putText(
+            frame,
+            f"Samples: {len(faces_data)}/{MAX_SAMPLES}",
+            (10, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (50, 255, 50),
+            2,
+        )
+
+    frame_count += 1
+    cv2.imshow("Face Data Collection - Press Q to quit", frame)
+
+    if cv2.waitKey(1) == ord("q") or len(faces_data) >= MAX_SAMPLES:
         break
 
 video.release()
 cv2.destroyAllWindows()
 
+# ── Save Data ──────────────────────────────────────────────────────────────────
+if len(faces_data) == 0:
+    print("[WARNING] No face data captured. Exiting without saving.")
+    exit()
+
 faces_data = np.array(faces_data)
-faces_data = faces_data.reshape(faces_data.shape[0], -1)
+actual_samples = len(faces_data)
+print(f"[INFO] Captured {actual_samples} samples.")
 
-directory = 'Ajay py'
-if not os.path.exists(directory):
-    os.makedirs(directory)
+os.makedirs(DATA_DIR, exist_ok=True)
 
-if 'names.pkl' not in os.listdir(directory):
-    names = [name] * 100
-    with open(f'{directory}/names.pkl', 'wb') as f:
-        pickle.dump(names, f)
-else:
-    with open(f'{directory}/names.pkl', 'rb') as f:
+names_path = os.path.join(DATA_DIR, "names.pkl")
+faces_path = os.path.join(DATA_DIR, "faces_data.pkl")
+
+# Append or create names
+if os.path.exists(names_path):
+    with open(names_path, "rb") as f:
         names = pickle.load(f)
-    names += [name] * 100
-    with open(f'{directory}/names.pkl', 'wb') as f:
-        pickle.dump(names, f)
-if 'faces_data.pkl' not in os.listdir(directory):
-    with open(f'{directory}/faces_data.pkl', 'wb') as f:
-        pickle.dump(faces_data, f)
+    names += [name] * actual_samples
 else:
-    with open(f'{directory}/faces_data.pkl', 'rb') as f:
-        faces = pickle.load(f)
-    faces = np.append(faces, faces_data, axis=0)
-    with open(f'{directory}/faces_data.pkl', 'wb') as f:
-        pickle.dump(faces, f)
+    names = [name] * actual_samples
+
+with open(names_path, "wb") as f:
+    pickle.dump(names, f)
+
+# Append or create faces
+if os.path.exists(faces_path):
+    with open(faces_path, "rb") as f:
+        existing_faces = pickle.load(f)
+    faces_data = np.append(existing_faces, faces_data, axis=0)
+
+with open(faces_path, "wb") as f:
+    pickle.dump(faces_data, f)
+
+print(f"[INFO] Data saved to '{DATA_DIR}/'. Total entries: {len(names)}")
