@@ -1,129 +1,125 @@
 """
 test.py - Real-time Face Recognition & Attendance Logging
-Recognizes faces via KNN and logs attendance to a date-stamped CSV on keypress.
+Run:  python test.py
+
+Keys:
+  O  →  Mark attendance for all recognised faces in current frame
+  Q  →  Quit
 """
 
 import cv2
-import pickle
-import numpy as np
-import os
-import csv
+import sys
 import time
 from datetime import datetime
-from sklearn.neighbors import KNeighborsClassifier
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-DATA_DIR = "data"
-ATTENDANCE_DIR = "Attendance"
-IMG_SIZE = (50, 50)
-COL_NAMES = ["NAME", "TIME", "DAY", "DATE"]
+from config       import IMG_SIZE, ATTENDANCE_DIR
+from preprocessor import normalize_face, largest_face
+from recognizer   import FaceRecognizer
+from data_manager import load_data, write_attendance, load_today_attendance
+from logger_setup import get_logger
 
-# ── Load Trained Data ──────────────────────────────────────────────────────────
-names_path = os.path.join(DATA_DIR, "names.pkl")
-faces_path = os.path.join(DATA_DIR, "faces_data.pkl")
+logger = get_logger("test.py")
 
-if not os.path.exists(names_path) or not os.path.exists(faces_path):
-    print("[ERROR] No training data found. Run face.py first to collect face data.")
-    exit()
 
-with open(names_path, "rb") as f:
-    LABELS = pickle.load(f)
-with open(faces_path, "rb") as f:
-    FACES = pickle.load(f)
+# ── Load data & train model ────────────────────────────────────────────────────
+try:
+    FACES, LABELS = load_data()
+except FileNotFoundError as e:
+    logger.error(str(e))
+    sys.exit(1)
 
-print(f"[INFO] Loaded {len(FACES)} face samples for {len(set(LABELS))} person(s): {set(LABELS)}")
+recognizer = FaceRecognizer()
+recognizer.train(FACES, LABELS)
 
-# Fix any length mismatch
-if len(LABELS) != len(FACES):
-    min_len = min(len(LABELS), len(FACES))
-    LABELS = LABELS[:min_len]
-    FACES = FACES[:min_len]
-    print(f"[WARNING] Trimmed data to {min_len} samples to fix length mismatch.")
 
-# ── Train KNN Classifier ───────────────────────────────────────────────────────
-knn = KNeighborsClassifier(n_neighbors=5)
-knn.fit(FACES, LABELS)
-print("[INFO] KNN model trained successfully.")
-
-# ── Video & Detector Setup ─────────────────────────────────────────────────────
+# ── Webcam & detector setup ────────────────────────────────────────────────────
 video = cv2.VideoCapture(0)
+if not video.isOpened():
+    logger.error("Cannot access webcam. Check connection.")
+    sys.exit(1)
+
 facedetect = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
-os.makedirs(ATTENDANCE_DIR, exist_ok=True)
+# Load already-marked names from today's CSV (prevents double-marking on restart)
+today_str           = datetime.now().strftime("%d-%m-%Y")
+attendance_recorded = load_today_attendance(today_str)
+if attendance_recorded:
+    logger.info(f"Already marked today: {attendance_recorded}")
 
-# Track who was already marked in this session
-attendance_recorded = set()
+logger.info("Press 'O' to mark attendance | Press 'Q' to quit")
 
-print("[INFO] Press 'O' to mark attendance | Press 'Q' to quit")
 
-# ── Main Loop ──────────────────────────────────────────────────────────────────
+# ── Main loop ──────────────────────────────────────────────────────────────────
 while True:
     ret, frame = video.read()
     if not ret:
-        print("[ERROR] Failed to capture frame.")
+        logger.error("Failed to capture frame from webcam.")
         break
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = facedetect.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+    gray      = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    raw_faces = facedetect.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
 
-    detected = []   # [(name, x, y, w, h), ...]
+    detected = []   # list of (name, confidence, x, y, w, h)
 
-    for (x, y, w, h) in faces:
+    for (x, y, w, h) in raw_faces:      # all faces shown; largest_face used in face.py only
         crop = frame[y:y + h, x:x + w]
-        resized = cv2.resize(crop, IMG_SIZE).flatten().reshape(1, -1)
-        predicted_name = knn.predict(resized)[0]
-        detected.append((predicted_name, x, y, w, h))
 
-        # Draw bounding box + label
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-        cv2.rectangle(frame, (x, y - 40), (x + w, y), (50, 50, 255), -1)
-        cv2.putText(
-            frame,
-            predicted_name,
-            (x + 5, y - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2,
-        )
+        try:
+            vector = normalize_face(crop, IMG_SIZE)
+        except ValueError:
+            continue
+
+        name, confidence = recognizer.predict(vector)
+        detected.append((name, confidence, x, y, w, h))
+
+        # Colour: blue=known, grey=unknown
+        is_known   = name != "Unknown"
+        box_color  = (200, 50, 0)  if is_known else (120, 120, 120)
+        label_bg   = (180, 30, 0)  if is_known else (80, 80, 80)
+        label      = f"{name}  {confidence:.0f}%" if is_known else "Unknown"
+
+        cv2.rectangle(frame, (x, y), (x + w, y + h), box_color, 2)
+        cv2.rectangle(frame, (x, y - 40), (x + w, y), label_bg, -1)
+        cv2.putText(frame, label, (x + 5, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
 
     # HUD
-    status = f"Detected: {len(detected)} face(s) | O=Mark  Q=Quit"
-    cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    known_count = sum(1 for d in detected if d[0] != "Unknown")
+    hud = (f"Faces: {len(detected)}  Known: {known_count}  "
+           f"|  O = Mark  Q = Quit  |  {datetime.now().strftime('%H:%M:%S')}")
+    cv2.putText(frame, hud, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 0), 2)
 
-    cv2.imshow("Attendance System - Face Recognition", frame)
+    cv2.imshow("Attendance System", frame)
     key = cv2.waitKey(1) & 0xFF
 
-    # ── Mark Attendance ────────────────────────────────────────────────────────
-    if key == ord("o"):
+    # ── Mark attendance ────────────────────────────────────────────────────────
+    if key in (ord("o"), ord("O")):
         if not detected:
-            print("[INFO] No faces detected to mark.")
+            logger.info("No faces in frame — nothing to mark.")
         else:
-            ts = time.time()
+            ts       = time.time()
             date_str = datetime.fromtimestamp(ts).strftime("%d-%m-%Y")
             time_str = datetime.fromtimestamp(ts).strftime("%H:%M:%S")
-            day_str = datetime.fromtimestamp(ts).strftime("%A")
-            filename = os.path.join(ATTENDANCE_DIR, f"Attendance_{date_str}.csv")
-            file_exists = os.path.isfile(filename)
+            day_str  = datetime.fromtimestamp(ts).strftime("%A")
 
-            with open(filename, "a", newline="") as csvfile:
-                writer = csv.writer(csvfile)
-                if not file_exists:
-                    writer.writerow(COL_NAMES)
-
-                for (name, *_) in detected:
-                    if name not in attendance_recorded:
+            for (name, confidence, *_) in detected:
+                if name == "Unknown":
+                    logger.info("Unknown face — skipping.")
+                elif name in attendance_recorded:
+                    logger.info(f"{name} already marked today — skipping.")
+                else:
+                    try:
+                        write_attendance(name, time_str, day_str, date_str)
                         attendance_recorded.add(name)
-                        writer.writerow([name, time_str, day_str, date_str])
-                        print(f"[✓] Attendance marked — {name} at {time_str}")
-                    else:
-                        print(f"[SKIP] {name} already marked this session.")
+                        logger.info(f"Marked — {name} | {time_str} | conf={confidence:.1f}%")
+                    except Exception as e:
+                        logger.error(f"Could not write attendance for {name}: {e}")
 
-    if key == ord("q"):
+    if key in (ord("q"), ord("Q")):
         break
 
 video.release()
 cv2.destroyAllWindows()
-print("[INFO] Session ended.")
+logger.info("Session ended.")

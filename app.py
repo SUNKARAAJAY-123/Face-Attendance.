@@ -1,69 +1,90 @@
 """
-app.py - Flask Web Dashboard for Attendance System
+app.py - Flask Web Dashboard
 Run:  python app.py
-Open: http://127.0.0.1:5000
+      FLASK_DEBUG=true python app.py   ← enable debug mode via env var only
+
+Endpoints:
+  GET /                  → HTML dashboard
+  GET /api/attendance    → JSON list of all records
+  GET /api/persons       → JSON list of registered persons
+  GET /health            → health check
 """
 
+import time
 from flask import Flask, render_template, jsonify
-import os
-import csv
-import glob
-from datetime import datetime
 
-app = Flask(__name__)
+from config        import FLASK_DEBUG, FLASK_PORT, CACHE_TTL_SEC
+from data_manager  import load_all_attendance, list_persons
+from logger_setup  import get_logger
 
-ATTENDANCE_DIR = "Attendance"
+logger = get_logger("app")
+app    = Flask(__name__)
 
-
-def load_all_attendance():
-    """Read all CSV files in the Attendance folder and return a unified list."""
-    records = []
-    pattern = os.path.join(ATTENDANCE_DIR, "Attendance_*.csv")
-    for filepath in sorted(glob.glob(pattern), reverse=True):
-        with open(filepath, newline="") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                records.append(row)
-    return records
+# ── Simple in-memory cache (fixes: full CSV reload on every request) ───────────
+_cache: dict = {"records": [], "ts": 0.0}
 
 
-def get_summary(records):
-    """Return per-person and per-date summary stats."""
-    per_person = {}
-    per_date = {}
+def get_cached_records() -> list:
+    if time.time() - _cache["ts"] > CACHE_TTL_SEC:
+        _cache["records"] = load_all_attendance()
+        _cache["ts"]      = time.time()
+        logger.debug(f"Cache refreshed — {len(_cache['records'])} records loaded.")
+    return _cache["records"]
 
+
+def get_summary(records: list) -> tuple[dict, dict]:
+    per_person: dict[str, int] = {}
+    per_date:   dict[str, int] = {}
     for r in records:
-        name = r.get("NAME", "Unknown")
-        date = r.get("DATE", "Unknown")
-
-        per_person[name] = per_person.get(name, 0) + 1
-        per_date[date] = per_date.get(date, 0) + 1
-
+        name = r.get("NAME", "").strip()
+        date = r.get("DATE", "").strip()
+        if name:
+            per_person[name] = per_person.get(name, 0) + 1
+        if date:
+            per_date[date]   = per_date.get(date, 0) + 1
     return per_person, per_date
 
 
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
 @app.route("/")
 def index():
-    records = load_all_attendance()
+    from datetime import datetime
+    records              = get_cached_records()
     per_person, per_date = get_summary(records)
-    today = datetime.now().strftime("%d-%m-%Y")
-    today_count = per_date.get(today, 0)
+    today                = datetime.now().strftime("%d-%m-%Y")
+    today_count          = per_date.get(today, 0)
     return render_template(
         "index.html",
-        records=records,
-        per_person=per_person,
-        per_date=per_date,
-        today=today,
-        today_count=today_count,
-        total=len(records),
+        records     = records,
+        per_person  = per_person,
+        per_date    = per_date,
+        today       = today,
+        today_count = today_count,
+        total       = len(records),
+        persons     = list_persons(),
     )
 
 
 @app.route("/api/attendance")
 def api_attendance():
-    """JSON endpoint — useful for future integrations."""
-    return jsonify(load_all_attendance())
+    """JSON endpoint — all attendance records."""
+    return jsonify(get_cached_records())
 
 
+@app.route("/api/persons")
+def api_persons():
+    """JSON endpoint — registered persons."""
+    return jsonify(list_persons())
+
+
+@app.route("/health")
+def health():
+    """Health check for monitoring / uptime tools."""
+    return jsonify({"status": "ok", "records": len(get_cached_records())})
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(debug=True)
+    logger.info(f"Starting Flask on port {FLASK_PORT} | debug={FLASK_DEBUG}")
+    app.run(debug=FLASK_DEBUG, port=FLASK_PORT, use_reloader=False)
