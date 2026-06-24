@@ -135,6 +135,9 @@ Attendance/
 *.pkl
 *.csv
 
+# Database
+attendance.db
+
 # Editor & IDE
 .vscode/
 *.swp

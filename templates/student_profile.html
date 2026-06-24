@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.student.name }} — Profile{% endblock %}
+{% block page_title %}Student Profile{% endblock %}
+
+{% block content %}
+{% set s = profile.student %}
+<div class="row g-3">
+  <!-- Profile card -->
+  <div class="col-md-4">
+    <div class="stat-card text-center mb-3">
+      <div style="width:80px;height:80px;border-radius:50%;background:var(--primary);
+                  display:flex;align-items:center;justify-content:center;
+                  font-size:2rem;font-weight:700;color:#fff;margin:0 auto 16px">
+        {{ s.name[0]|upper }}
+      </div>
+      <h5 style="font-weight:700">{{ s.name }}</h5>
+      <p style="color:var(--muted);font-size:.85rem">{{ s.roll_number }} · {{ s.department }}</p>
+      <p style="color:var(--muted);font-size:.82rem">{{ s.email or 'No email' }}</p>
+      <hr/>
+      <div class="row g-2 text-center mt-1">
+        <div class="col-4">
+          <div style="font-size:1.4rem;font-weight:700;color:#22c55e">{{ profile.present }}</div>
+          <div style="font-size:.72rem;color:var(--muted)">Present</div>
+        </div>
+        <div class="col-4">
+          <div style="font-size:1.4rem;font-weight:700;color:#ef4444">
+            {{ profile.total - profile.present }}</div>
+          <div style="font-size:.72rem;color:var(--muted)">Absent</div>
+        </div>
+        <div class="col-4">
+          <div style="font-size:1.4rem;font-weight:700;
+                      color:{% if profile.pct>=75 %}#22c55e{% else %}#ef4444{% endif %}">
+            {{ profile.pct }}%</div>
+          <div style="font-size:.72rem;color:var(--muted)">Overall</div>
+        </div>
+      </div>
+      <div class="pct-bar mt-3">
+        <div class="pct-fill"
+             style="width:{{ profile.pct }}%;
+                    background:{% if profile.pct>=75 %}#22c55e{% else %}#ef4444{% endif %}">
+        </div>
+      </div>
+      <p style="font-size:.75rem;color:var(--muted);margin-top:6px">
+        {% if profile.pct >= 75 %}
+          ✅ Attendance is satisfactory
+        {% else %}
+          ⚠ Below 75% — at risk
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- Performance insight -->
+    <div class="stat-card">
+      <h6 style="font-size:.85rem;font-weight:600;margin-bottom:12px">
+        <i class="bi bi-lightbulb-fill me-2" style="color:#f59e0b"></i>Insights</h6>
+      <ul style="font-size:.82rem;color:var(--muted);padding-left:16px;margin:0">
+        {% if profile.pct >= 90 %}
+        <li>🌟 Excellent attendance — keep it up!</li>
+        {% elif profile.pct >= 75 %}
+        <li>👍 Good attendance. Maintain regularity.</li>
+        {% elif profile.pct >= 60 %}
+        <li>⚠ Below 75%. Improvement needed.</li>
+        {% else %}
+        <li>🚨 Critical — may be detained.</li>
+        {% endif %}
+        <li>{{ profile.present }} days present out of {{ profile.total }}.</li>
+        <li>Last recorded: {{ profile.history[0].date if profile.history else 'N/A' }}</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Charts + history -->
+  <div class="col-md-8">
+    <div class="chart-card mb-3">
+      <h6><i class="bi bi-bar-chart me-2"></i>Monthly Attendance</h6>
+      <canvas id="monthlyChart" height="100"></canvas>
+    </div>
+
+    <div class="data-table">
+      <div class="table-header">
+        <span style="font-weight:600">Attendance History</span>
+      </div>
+      <div style="overflow-x:auto;max-height:320px;overflow-y:auto">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Date</th><th>Day</th><th>Time</th>
+              <th>Status</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+          {% for h in profile.history %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ h.date }}</td>
+            <td>{{ h.day_name }}</td>
+            <td>{{ h.time_in }}</td>
+            <td>
+              {% if h.status == 'Present' %}
+              <span class="badge-present">Present</span>
+              {% else %}
+              <span class="badge-absent">Absent</span>
+              {% endif %}
+            </td>
+            <td>{{ "%.1f"|format(h.confidence) }}%</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">
+            No records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const monthly = {{ profile.monthly | tojson }};
+const labels  = Object.keys(monthly);
+const present = labels.map(k => monthly[k].present);
+const absent  = labels.map(k => monthly[k].absent);
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      { label:'Present', data:present, backgroundColor:'rgba(34,197,94,.7)', borderRadius:4 },
+      { label:'Absent',  data:absent,  backgroundColor:'rgba(239,68,68,.7)',  borderRadius:4 }
+    ]
+  },
+  options: {
+    responsive:true,
+    plugins:{ legend:{ position:'top', labels:{ font:{ size:11 } } } },
+    scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } }
+  }
+});
+</script>
+{% endblock %}

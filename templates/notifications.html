@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Notifications — AttendanceAI{% endblock %}
+{% block page_title %}Notifications & Alerts{% endblock %}
+
+{% block content %}
+{% if notifs %}
+<div class="mb-3 text-muted" style="font-size:.85rem">
+  {{ notifs|length }} notification(s) — all marked as read now.
+</div>
+{% for n in notifs %}
+<div class="alert-card {% if 'low' in n.type %}danger{% endif %} mb-2">
+  <div class="d-flex align-items-start justify-content-between">
+    <div>
+      <i class="bi bi-exclamation-triangle-fill me-2"
+         style="color:{% if 'low' in n.type %}#ef4444{% else %}#f59e0b{% endif %}"></i>
+      <strong>{{ n.message }}</strong>
+      {% if n.student_name %}
+      <a href="#" style="font-size:.8rem;margin-left:8px">[{{ n.student_name }}]</a>
+      {% endif %}
+    </div>
+    <span style="font-size:.75rem;color:var(--muted);white-space:nowrap;margin-left:16px">
+      {{ n.created_at }}</span>
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="stat-card text-center py-5">
+  <i class="bi bi-check-circle-fill" style="font-size:3rem;color:#22c55e"></i>
+  <p style="margin-top:12px;font-size:1rem;color:var(--muted)">No notifications. Everything looks good!</p>
+</div>
+{% endif %}
+{% endblock %}

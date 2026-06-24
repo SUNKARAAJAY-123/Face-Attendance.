@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Attendance — AttendanceAI{% endblock %}
+{% block page_title %}Attendance Records{% endblock %}
+
+{% block content %}
+<form class="d-flex gap-2 flex-wrap mb-3" method="GET">
+  <input type="date" name="date" class="form-control form-control-sm"
+         style="width:160px"
+         value="{{ request.args.get('date', '') }}"/>
+  <input type="text" name="q" value="{{ request.args.get('q','') }}"
+         class="form-control form-control-sm" placeholder="Search name…"
+         style="width:180px"/>
+  <select name="dept" class="form-select form-select-sm" style="width:160px">
+    <option value="">All Departments</option>
+    {% for d in depts %}
+    <option value="{{ d }}" {% if request.args.get('dept')==d %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-sm btn-primary" type="submit">
+    <i class="bi bi-search me-1"></i>Filter</button>
+  <a href="{{ url_for('attendance') }}" class="btn btn-sm btn-outline-secondary">Today</a>
+</form>
+
+<div class="d-flex gap-2 mb-3">
+  <a href="{{ url_for('export_csv') }}"   class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-filetype-csv me-1"></i>CSV</a>
+  <a href="{{ url_for('export_excel') }}" class="btn btn-sm btn-outline-success">
+    <i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
+  <a href="{{ url_for('export_pdf') }}"   class="btn btn-sm btn-outline-danger">
+    <i class="bi bi-file-pdf me-1"></i>PDF</a>
+</div>
+
+<div class="data-table">
+  <div class="table-header">
+    <span style="font-weight:600">
+      {{ records|length }} record(s) — {{ date }}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr><th>#</th><th>Name</th><th>Roll No</th><th>Department</th>
+          <th>Time</th><th>Day</th><th>Status</th><th>Confidence</th></tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td><a href="{{ url_for('student_profile', sid=r.student_id) }}"
+               style="color:var(--primary);font-weight:500;text-decoration:none">
+               {{ r.name }}</a></td>
+        <td>{{ r.roll_number }}</td>
+        <td>{{ r.department }}</td>
+        <td>{{ r.time_in }}</td>
+        <td>{{ r.day_name }}</td>
+        <td><span class="badge-present">{{ r.status }}</span></td>
+        <td>{{ "%.1f"|format(r.confidence) }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">
+        No records for this date / filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

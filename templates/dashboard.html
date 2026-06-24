@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — AttendanceAI{% endblock %}
+{% block page_title %}Dashboard Overview{% endblock %}
+
+{% block content %}
+<!-- Stat cards -->
+<div class="row g-3 mb-4">
+  {% set cards = [
+    ("Total Students",   stats.total_students,  "bi-people-fill",       "#1a73e8","#dbeafe"),
+    ("Present Today",    stats.present_today,   "bi-check-circle-fill", "#22c55e","#dcfce7"),
+    ("Absent Today",     stats.absent_today,    "bi-x-circle-fill",     "#ef4444","#fee2e2"),
+    ("Avg Attendance",   stats.avg_attendance|string + "%", "bi-graph-up","#f59e0b","#fef3c7"),
+    ("Below 75%",        stats.below_75|length, "bi-exclamation-triangle-fill","#ef4444","#fee2e2"),
+    ("Total Records",    stats.total_records,   "bi-database-fill",     "#8b5cf6","#ede9fe"),
+  ] %}
+  {% for label, val, icon, color, bg in cards %}
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="stat-card h-100">
+      <div class="icon" style="background:{{ bg }};color:{{ color }}">
+        <i class="bi {{ icon }}"></i>
+      </div>
+      <div class="value" style="color:{{ color }}">{{ val }}</div>
+      <div class="label">{{ label }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Charts row -->
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="chart-card">
+      <h6><i class="bi bi-bar-chart-fill me-2"></i>Daily Attendance Trend (Last 30 Days)</h6>
+      <canvas id="trendChart" height="90"></canvas>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="chart-card">
+      <h6><i class="bi bi-pie-chart-fill me-2"></i>Present vs Absent Today</h6>
+      <canvas id="pieChart" height="200"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Top 10 + Alerts -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="chart-card">
+      <h6><i class="bi bi-trophy-fill me-2" style="color:#f59e0b"></i>Top Performers</h6>
+      {% set medals = ["🥇","🥈","🥉"] %}
+      {% for s in stats.top_10 %}
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span style="width:24px;font-size:.9rem">
+          {{ medals[loop.index0] if loop.index0 < 3 else loop.index }}</span>
+        <span style="width:140px;font-size:.85rem;font-weight:500;overflow:hidden;
+                     text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+        <div class="pct-bar flex-1">
+          <div class="pct-fill"
+               style="width:{{ s.pct }}%;background:{% if s.pct>=75 %}#22c55e{% else %}#ef4444{% endif %}">
+          </div>
+        </div>
+        <span style="font-size:.8rem;font-weight:600;width:40px;text-align:right">
+          {{ s.pct }}%</span>
+      </div>
+      {% else %}
+      <p style="color:var(--muted);font-size:.85rem">No data yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="chart-card">
+      <h6><i class="bi bi-bell-fill me-2" style="color:#ef4444"></i>
+          Alerts ({{ notifs|length }})</h6>
+      {% for n in notifs[:5] %}
+      <div class="alert-card {% if 'below' in n.type %}danger{% endif %}">
+        <i class="bi bi-exclamation-triangle-fill me-2"
+           style="color:{% if 'below' in n.type %}#ef4444{% else %}#f59e0b{% endif %}"></i>
+        {{ n.message }}
+        <span style="font-size:.72rem;color:var(--muted);float:right">{{ n.created_at }}</span>
+      </div>
+      {% else %}
+      <p style="color:var(--muted);font-size:.85rem">No alerts. All good! ✅</p>
+      {% endfor %}
+      {% if notifs|length > 5 %}
+      <a href="{{ url_for('notifications') }}" style="font-size:.82rem">
+        View all {{ notifs|length }} alerts →</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Recent attendance table -->
+<div class="data-table">
+  <div class="table-header">
+    <span style="font-weight:600">Today's Attendance — {{ stats.today }}</span>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('export_csv') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-download me-1"></i>CSV</a>
+      <a href="{{ url_for('export_excel') }}" class="btn btn-sm btn-outline-success">
+        <i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
+      <a href="{{ url_for('export_pdf') }}" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-file-pdf me-1"></i>PDF</a>
+    </div>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr><th>#</th><th>Name</th><th>Roll No</th><th>Dept</th><th>Time</th><th>Status</th></tr>
+    </thead>
+    <tbody id="dashTbody">
+      {% set ns = namespace(count=0) %}
+      {% for s in stats.top_10 %}
+      {% set ns.count = ns.count + 1 %}
+      <tr>
+        <td>{{ ns.count }}</td>
+        <td><a href="{{ url_for('student_profile', sid=s.id) }}"
+               style="color:var(--primary);text-decoration:none;font-weight:500">
+               {{ s.name }}</a></td>
+        <td>—</td><td>—</td><td>—</td>
+        <td><span class="badge-present">Present</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">
+        No attendance recorded yet today.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const trendLabels = {{ trend | map(attribute='date') | list | tojson }};
+const trendData   = {{ trend | map(attribute='cnt')  | list | tojson }};
+const present     = {{ stats.present_today }};
+const absent      = {{ stats.absent_today }};
+
+// Trend line chart
+new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels: trendLabels,
+    datasets: [{
+      label: 'Present',
+      data: trendData,
+      backgroundColor: 'rgba(26,115,232,.7)',
+      borderRadius: 6,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, ticks: { stepSize: 1 } },
+      x: { ticks: { font: { size: 10 } } }
+    }
+  }
+});
+
+// Pie chart
+new Chart(document.getElementById('pieChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Present', 'Absent'],
+    datasets: [{
+      data: [present, absent],
+      backgroundColor: ['#22c55e', '#ef4444'],
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '65%',
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { size: 11 } } }
+    }
+  }
+});
+</script>
+{% endblock %}

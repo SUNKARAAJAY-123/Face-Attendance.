@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Analytics — AttendanceAI{% endblock %}
+{% block page_title %}Advanced Analytics{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="chart-card">
+      <h6><i class="bi bi-graph-up me-2"></i>Daily Attendance Trend</h6>
+      <canvas id="lineChart" height="90"></canvas>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="chart-card">
+      <h6><i class="bi bi-pie-chart-fill me-2"></i>Present vs Absent</h6>
+      <canvas id="doughnutChart" height="200"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="chart-card">
+      <h6><i class="bi bi-bar-chart-fill me-2"></i>Top 10 Students</h6>
+      <canvas id="barChart" height="160"></canvas>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="chart-card">
+      <h6><i class="bi bi-pie-chart me-2"></i>Attendance Distribution</h6>
+      <canvas id="pieChart" height="160"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Summary table -->
+<div class="data-table">
+  <div class="table-header">
+    <span style="font-weight:600">Student Attendance Summary</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr><th>Rank</th><th>Name</th><th>Present Days</th><th>Total Days</th>
+          <th>Attendance %</th><th>Status</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for s in stats.top_10 + stats.below_75 | unique(attribute='id') | list %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td><a href="{{ url_for('student_profile', sid=s.id) }}"
+               style="color:var(--primary);font-weight:500;text-decoration:none">
+               {{ s.name }}</a></td>
+        <td>{{ s.present }}</td>
+        <td>{{ s.total }}</td>
+        <td>
+          <div class="d-flex align-items-center gap-2">
+            <div class="pct-bar" style="width:80px">
+              <div class="pct-fill"
+                   style="width:{{ s.pct }}%;background:{% if s.pct>=75 %}#22c55e{% else %}#ef4444{% endif %}">
+              </div>
+            </div>
+            <span style="font-size:.82rem;font-weight:600">{{ s.pct }}%</span>
+          </div>
+        </td>
+        <td>
+          {% if s.pct >= 75 %}
+          <span class="badge-present">Good</span>
+          {% else %}
+          <span class="badge-absent">Defaulter</span>
+          {% endif %}
+        </td>
+        <td><a href="{{ url_for('student_profile', sid=s.id) }}"
+               class="btn btn-sm btn-outline-primary">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">
+        No data available.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const trendLabels = {{ trend | map(attribute='date') | list | tojson }};
+const trendData   = {{ trend | map(attribute='cnt')  | list | tojson }};
+const top10names  = {{ stats.top_10 | map(attribute='name') | list | tojson }};
+const top10pct    = {{ stats.top_10 | map(attribute='pct')  | list | tojson }};
+const present     = {{ stats.present_today }};
+const absent      = {{ stats.absent_today }};
+
+new Chart(document.getElementById('lineChart'),{
+  type:'line',
+  data:{labels:trendLabels,datasets:[{
+    label:'Present',data:trendData,
+    borderColor:'#1a73e8',backgroundColor:'rgba(26,115,232,.1)',
+    fill:true,tension:.4,pointRadius:3
+  }]},
+  options:{responsive:true,plugins:{legend:{display:false}},
+           scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
+});
+
+new Chart(document.getElementById('doughnutChart'),{
+  type:'doughnut',
+  data:{labels:['Present','Absent'],
+        datasets:[{data:[present,absent],
+                   backgroundColor:['#22c55e','#ef4444'],borderWidth:0}]},
+  options:{responsive:true,cutout:'65%',
+           plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}
+});
+
+new Chart(document.getElementById('barChart'),{
+  type:'bar',
+  data:{labels:top10names,datasets:[{
+    label:'Attendance %',data:top10pct,
+    backgroundColor:top10pct.map(v=>v>=75?'rgba(34,197,94,.7)':'rgba(239,68,68,.7)'),
+    borderRadius:6
+  }]},
+  options:{responsive:true,plugins:{legend:{display:false}},
+           scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}}}}
+});
+
+new Chart(document.getElementById('pieChart'),{
+  type:'pie',
+  data:{
+    labels:['≥75% (Good)','<75% (Defaulter)'],
+    datasets:[{
+      data:[
+        {{ stats.top_10|length }},
+        {{ stats.below_75|length }}
+      ],
+      backgroundColor:['#22c55e','#ef4444'],borderWidth:0
+    }]
+  },
+  options:{responsive:true,plugins:{legend:{position:'bottom'}}}
+});
+</script>
+{% endblock %}
