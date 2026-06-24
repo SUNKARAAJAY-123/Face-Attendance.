@@ -164,6 +164,10 @@
        class="nav-link {% if request.endpoint in ['users','add_user'] %}active{% endif %}">
       <i class="bi bi-shield-lock-fill"></i> Manage Users
     </a>
+    <a href="{{ url_for('scheduler_page') }}"
+       class="nav-link {% if request.endpoint=='scheduler_page' %}active{% endif %}">
+      <i class="bi bi-clock-fill"></i> Scheduler
+    </a>
     {% endif %}
   </div>
   <div style="padding:16px 24px;border-top:1px solid #1e293b">

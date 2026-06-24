@@ -16,7 +16,7 @@ from config import FACES_FILE, NAMES_FILE, DATA_DIR, ATTENDANCE_DIR
 
 logger = get_logger("data_manager")
 
-COL_NAMES = ["NAME", "TIME", "DAY", "DATE"]
+COL_NAMES = ["NAME", "TIME", "DAY", "DATE", "STATUS"]
 
 
 # ── Face / Name storage ────────────────────────────────────────────────────────
@@ -102,7 +102,9 @@ def list_persons() -> list:
 
 # ── Attendance CSV ─────────────────────────────────────────────────────────────
 
-def write_attendance(name: str, time_str: str, day_str: str, date_str: str) -> None:
+def write_attendance(name: str, time_str: str, day_str: str,
+                     date_str: str, status: str = "Present",
+                     confidence: float = 0.0) -> None:
     """
     Atomically append one attendance record to today's CSV.
     Uses temp-file + rename to prevent corrupt writes on crash.
@@ -124,7 +126,7 @@ def write_attendance(name: str, time_str: str, day_str: str, date_str: str) -> N
                 writer.writerow(COL_NAMES)
 
             writer = csv.writer(tmp_file)
-            writer.writerow([name, time_str, day_str, date_str])
+            writer.writerow([name, time_str, day_str, date_str, status])
 
         shutil.move(tmp_path, filename)
         logger.info(f"Attendance written — {name} | {time_str} | {day_str}")

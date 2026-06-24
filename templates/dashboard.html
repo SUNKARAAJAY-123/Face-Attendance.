@@ -6,20 +6,20 @@
 <!-- Stat cards -->
 <div class="row g-3 mb-4">
   {% set cards = [
-    ("Total Students",   stats.total_students,  "bi-people-fill",       "#1a73e8","#dbeafe"),
-    ("Present Today",    stats.present_today,   "bi-check-circle-fill", "#22c55e","#dcfce7"),
-    ("Absent Today",     stats.absent_today,    "bi-x-circle-fill",     "#ef4444","#fee2e2"),
-    ("Avg Attendance",   stats.avg_attendance|string + "%", "bi-graph-up","#f59e0b","#fef3c7"),
-    ("Below 75%",        stats.below_75|length, "bi-exclamation-triangle-fill","#ef4444","#fee2e2"),
-    ("Total Records",    stats.total_records,   "bi-database-fill",     "#8b5cf6","#ede9fe"),
+    ("Total Students",   stats.total_students,  "bi-people-fill",       "#1a73e8","#dbeafe","stat-total"),
+    ("Present Today",    stats.present_today,   "bi-check-circle-fill", "#22c55e","#dcfce7","stat-present"),
+    ("Absent Today",     stats.absent_today,    "bi-x-circle-fill",     "#ef4444","#fee2e2","stat-absent"),
+    ("Avg Attendance",   stats.avg_attendance|string + "%", "bi-graph-up","#f59e0b","#fef3c7","stat-avg"),
+    ("Below 75%",        stats.below_75|length, "bi-exclamation-triangle-fill","#ef4444","#fee2e2","stat-below"),
+    ("Total Records",    stats.total_records,   "bi-database-fill",     "#8b5cf6","#ede9fe","stat-records"),
   ] %}
-  {% for label, val, icon, color, bg in cards %}
+  {% for label, val, icon, color, bg, sid in cards %}
   <div class="col-6 col-md-4 col-xl-2">
     <div class="stat-card h-100">
       <div class="icon" style="background:{{ bg }};color:{{ color }}">
         <i class="bi {{ icon }}"></i>
       </div>
-      <div class="value" style="color:{{ color }}">{{ val }}</div>
+      <div class="value" id="{{ sid }}" style="color:{{ color }}">{{ val }}</div>
       <div class="label">{{ label }}</div>
     </div>
   </div>
@@ -90,6 +90,24 @@
   </div>
 </div>
 
+<!-- Feature 10: AI Insights row -->
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="chart-card">
+      <h6><i class="bi bi-cpu-fill me-2" style="color:#8b5cf6"></i>
+          Smart AI Insights
+          <span style="font-size:.72rem;color:var(--muted);font-weight:400;margin-left:8px">
+            Auto-generated · updates daily</span>
+          <span style="float:right;font-size:.75rem;color:var(--muted)">
+            <i class="bi bi-arrow-clockwise me-1"></i>Auto-refreshes every 30s</span>
+      </h6>
+      <div id="ai-insights">
+        <p style="color:var(--muted);font-size:.85rem">Loading insights…</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Recent attendance table -->
 <div class="data-table">
   <div class="table-header">
@@ -137,46 +155,81 @@ const trendData   = {{ trend | map(attribute='cnt')  | list | tojson }};
 const present     = {{ stats.present_today }};
 const absent      = {{ stats.absent_today }};
 
-// Trend line chart
-new Chart(document.getElementById('trendChart'), {
+// Trend bar chart
+const trendChart = new Chart(document.getElementById('trendChart'), {
   type: 'bar',
   data: {
     labels: trendLabels,
     datasets: [{
-      label: 'Present',
-      data: trendData,
-      backgroundColor: 'rgba(26,115,232,.7)',
-      borderRadius: 6,
+      label: 'Present', data: trendData,
+      backgroundColor: 'rgba(26,115,232,.7)', borderRadius: 6,
     }]
   },
   options: {
     responsive: true,
     plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, ticks: { stepSize: 1 } },
-      x: { ticks: { font: { size: 10 } } }
-    }
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } },
+              x: { ticks: { font: { size: 10 } } } }
   }
 });
 
 // Pie chart
-new Chart(document.getElementById('pieChart'), {
+const pieChart = new Chart(document.getElementById('pieChart'), {
   type: 'doughnut',
   data: {
     labels: ['Present', 'Absent'],
-    datasets: [{
-      data: [present, absent],
-      backgroundColor: ['#22c55e', '#ef4444'],
-      borderWidth: 0,
-    }]
+    datasets: [{ data: [present, absent],
+                 backgroundColor: ['#22c55e', '#ef4444'], borderWidth: 0 }]
   },
-  options: {
-    responsive: true,
-    cutout: '65%',
-    plugins: {
-      legend: { position: 'bottom', labels: { font: { size: 11 } } }
-    }
-  }
+  options: { responsive: true, cutout: '65%',
+             plugins: { legend: { position: 'bottom',
+                                  labels: { font: { size: 11 } } } } }
 });
+
+// ── Feature 9: Auto-refresh stats every 30 seconds ────────────────────────
+function updateStatCards(stats) {
+  const map = {
+    'stat-total':   stats.total_students,
+    'stat-present': stats.present_today,
+    'stat-absent':  stats.absent_today,
+    'stat-avg':     stats.avg_attendance + '%',
+    'stat-below':   stats.below_75.length,
+    'stat-records': stats.total_records,
+  };
+  Object.entries(map).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el && el.textContent != String(val)) {
+      el.textContent = val;
+      el.style.transition = 'color .4s';
+      el.style.color = '#22c55e';
+      setTimeout(() => el.style.color = '', 800);
+    }
+  });
+  // Update pie
+  pieChart.data.datasets[0].data = [stats.present_today, stats.absent_today];
+  pieChart.update();
+}
+
+setInterval(() => {
+  fetch('/api/stats')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d) updateStatCards(d); })
+    .catch(() => {});
+}, 30000);
+
+// ── Feature 10: Load AI insights ─────────────────────────────────────────
+fetch('/api/insights')
+  .then(r => r.json())
+  .then(data => {
+    const box = document.getElementById('ai-insights');
+    if (!box || !data.length) return;
+    box.innerHTML = data.map(d =>
+      `<div class="alert-card mb-1">
+         <span style="font-size:.8rem">${d.message}</span>
+         <span style="float:right;font-size:.72rem;color:var(--muted)">
+           ${d.created_at}</span>
+       </div>`
+    ).join('');
+  }).catch(() => {});
 </script>
 {% endblock %}

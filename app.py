@@ -27,6 +27,7 @@ from models       import (User, get_all_students, get_student,
                            get_student_by_name)
 from data_manager import load_all_attendance, list_persons
 from logger_setup import get_logger
+from scheduler    import start_scheduler, stop_scheduler
 
 logger = get_logger("app")
 
@@ -219,6 +220,27 @@ def notifications():
 
 
 # ── User management (admin only) ───────────────────────────────────────────────
+@app.route("/scheduler")
+@login_required
+@admin_required
+def scheduler_page():
+    import os
+    from config import BACKUP_DIR
+    backups = []
+    if os.path.exists(BACKUP_DIR):
+        for f in sorted(os.listdir(BACKUP_DIR), reverse=True):
+            if f.endswith(".zip"):
+                fp = os.path.join(BACKUP_DIR, f)
+                backups.append({
+                    "name":  f,
+                    "size":  os.path.getsize(fp) // 1024,
+                    "mtime": datetime.fromtimestamp(
+                        os.path.getmtime(fp)).strftime("%d-%m-%Y %H:%M"),
+                })
+    return render_template("scheduler_page.html",
+                           backups=backups, user=current_user)
+
+
 @app.route("/users")
 @login_required
 @admin_required
@@ -350,12 +372,47 @@ def export_pdf():
 @app.route("/api/stats")
 @login_required
 def api_stats():
+    """Feature 9: polled every 30s by dashboard JS for auto-refresh."""
     return jsonify(get_attendance_stats())
 
 
-@app.route("/api/trend")
+@app.route("/api/insights")
 @login_required
-def api_trend():
+def api_insights():
+    """Feature 10: return latest AI insight notifications."""
+    from database import get_db
+    conn  = get_db()
+    rows  = conn.execute("""
+        SELECT message, created_at FROM notifications
+        WHERE type='ai_insight'
+        ORDER BY created_at DESC LIMIT 10
+    """).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/scheduler/run-now/<job>", methods=["POST"])
+@login_required
+@admin_required
+def run_job_now(job):
+    """Manually trigger a scheduler job (admin only)."""
+    from scheduler import (job_defaulter_check, job_daily_email_report,
+                            job_nightly_backup, job_monthly_report,
+                            job_ai_insights)
+    jobs = {
+        "defaulter": job_defaulter_check,
+        "email":     job_daily_email_report,
+        "backup":    job_nightly_backup,
+        "monthly":   job_monthly_report,
+        "insights":  job_ai_insights,
+    }
+    if job not in jobs:
+        return jsonify({"error": "Unknown job"}), 400
+    try:
+        jobs[job]()
+        return jsonify({"status": "ok", "job": job})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     days = int(request.args.get("days", 30))
     return jsonify(get_daily_trend(days))
 
@@ -436,5 +493,8 @@ def sync_csv_to_db():
 if __name__ == "__main__":
     init_db()
     sync_csv_to_db()
+    start_scheduler()
+    import atexit
+    atexit.register(stop_scheduler)
     logger.info(f"Starting on http://127.0.0.1:{FLASK_PORT}  debug={FLASK_DEBUG}")
     app.run(debug=FLASK_DEBUG, port=FLASK_PORT, use_reloader=False)
